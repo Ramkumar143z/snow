@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SNOW AI | Personalized Mental Wellness Companion</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Using the Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        
+        :root {
+            --primary-color: #4A60C0; /* Bright Blue derived from image */
+            --dark-bg: #0B0E1B; /* Dark Navy/Indigo derived from image */
+            --light-text: #ffffff;
+            --ice-color: #A8C6FA; /* Custom Ice Blue for branding */
+            --portal-pending: #1f2937; /* Gray */
+            --portal-completed: #10b981; /* Green */
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--light-text);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+            scroll-snap-type: y mandatory; /* Scroll Snapping added here */
+        }
+
+        /* Scroll Snapping Target - Only apply to portals for overlap effect */
+        .snap-target {
+            scroll-snap-align: start;
+        }
+
+        /* Parallax Background with AI Animation Video */
+        #ai-animation-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden; 
+            z-index: -1;
+        }
+        #ai-animation-bg video {
+            min-width: 100%;
+            min-height: 100%;
+            width: auto;
+            height: auto;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Center the video initially */
+            object-fit: cover; 
+            opacity: 0.15; 
+            filter: blur(2px) grayscale(50%); 
+            transition: opacity 0.5s ease-out, filter 0.5s ease-out; 
+        }
+
+        /* Scrollable content */
+        #content-wrapper {
+            position: relative;
+            z-index: 10;
+        }
+
+        /* Navbar Styling */
+        .navbar {
+            backdrop-filter: blur(8px);
+            background-color: rgba(11, 14, 27, 0.8);
+            z-index: 40;
+        }
+        
+        /* Portal Styling */
+        .portal-card {
+            width: 90%; /* Increased size */
+            max-width: 90rem; /* Increased size */
+            min-height: 80vh; /* Retained min-height for snap effect */
+            opacity: 0.8; 
+            /* COMBINED TRANSFORM: Starts slightly lower and slightly smaller */
+            transform: translateY(50px) scale(0.95); 
+            transition: opacity 1s ease-out, transform 1s ease-out, background-color 0.5s ease;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+            margin-top:px; /* Added margin for separation */
+            margin-bottom: 2rem; /* Added margin for separation */
+        }
+
+        .portal-card.visible {
+            opacity: 1;
+            /* END STATE: Moves to zero Y and scales to 1 (zooming) */
+            transform: translateY(0) scale(1); 
+        }
+
+        .portal-card.completed {
+            background-color: var(--portal-completed);
+            box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.5), 0 4px 6px -2px rgba(16, 185, 129, 0.5);
+            color: var(--dark-bg);
+        }
+
+        /* Modal - Conversation Box */
+        .modal, .overlay {
+            background-color: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(8px);
+            z-index: 50;
+        }
+
+        /* Message Box Style */
+        .message-box {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            background-color: var(--primary-color);
+            color: var(--light-text);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            z-index: 60;
+        }
+        .message-box.show {
+            opacity: 1;
+        }
+
+        /* Keyframes for Scanner Simulation */
+         @keyframes scan {
+             0% { top: 0; }
+             50% { top: 99%; }
+             100% { top: 0; }
+         }
+
+        /* Navbar Dropdown Styling */
+        .navbar-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            min-width: 300px;
+            z-index: 50;
+        }
+        .navbar-dropdown-profile {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            min-width: 200px;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="selection:bg-blue-400 selection:text-black">
+
+    <!-- Global Firebase/Auth Variables -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Log level for debugging Firestore issues
+        setLogLevel('Debug');
+        
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db;
+        let auth;
+
+        // Initialize Firebase and Auth
+        const initFirebase = async () => {
+            if (Object.keys(firebaseConfig).length === 0) {
+                 console.error("Firebase config is missing. Proceeding anonymously.");
+            }
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Initial authentication check
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                console.log("Firebase and Auth initialized.");
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+            }
+        };
+
+        // Make Firebase instances globally accessible for this file's script block
+        window.db = db;
+        window.auth = auth;
+        window.appId = appId;
+        window.initialAuthToken = initialAuthToken;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.getAuth = getAuth;
+
+        initFirebase();
+    </script>
+
+    <!-- Parallax Background Video -->
+    <div id="ai-animation-bg">
+        <video autoplay muted loop playsinline>
+            <source src="uploaded:Hailuo_Video_create a video of with paralla_437618869651410946 (1).mp4" type="video/mp4" onerror="this.onerror=null;this.src='https://assets.mixkit.co/videos/preview/mixkit-artificial-intelligence-interface-31122-large.mp4'">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+
+    <!-- Navbar/Toolbar -->
+    <nav class="navbar fixed top-0 w-full px-8 py-4 flex justify-between items-center border-b border-gray-800">
+        <div class="flex items-center space-x-2">
+            <!-- Logo/Brand Text -->
+            <svg class="w-6 h-6" style="color: var(--ice-color);" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-8H5a1 1 0 000 2h4v4a1 1 0 002 0v-4h4a1 1 0 100-2h-4V7a1 1 0 00-2 0v4z" clip-rule="evenodd"></path>
+            </svg>
+            <h1 class="text-xl font-extrabold" style="color: var(--ice-color);">SNOW AI</h1>
+        </div>
+        
+        <div class="flex space-x-6 relative">
+            <a href="#portal-1" class="text-gray-300 hover:text-white transition duration-200">Journey</a>
+            <a href="#output-section" class="text-gray-300 hover:text-white transition duration-200">Analysis</a>
+            
+            <!-- Plans & Payments Dropdown -->
+            <div class="relative">
+                <button id="plans-dropdown-btn" onclick="togglePlansDropdown(event)" class="text-gray-300 hover:text-white transition duration-200 flex items-center">
+                    Plans & Payments 
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div id="plans-dropdown-menu" class="navbar-dropdown hidden p-4 bg-gray-900 rounded-xl shadow-2xl border border-gray-700">
+                    <h3 class="text-lg font-bold mb-3 text-blue-400">Subscription Plans</h3>
+                    <div class="space-y-4">
+                        <!-- Plan 1 -->
+                        <div class="p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500 transition duration-300">
+                            <p class="text-xl font-bold">1 Month Plan</p>
+                            <p class="text-2xl font-extrabold mt-1 text-green-400">₹799 <span class="text-sm font-normal text-gray-400">/mo</span></p>
+                            <div class="mt-3 space-y-2">
+                                <button onclick="handleSubscription('1 Month', 799, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                                </button>
+                                <button onclick="handleSubscription('1 Month', 799, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Plan 2 -->
+                         <div class="p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500 transition duration-300">
+                            <p class="text-xl font-bold">6 Month Plan</p>
+                            <p class="text-2xl font-extrabold mt-1 text-green-400">₹3,999 <span class="text-sm font-normal text-gray-400">(₹666/mo)</span></p>
+                            <div class="mt-3 space-y-2">
+                                <button onclick="handleSubscription('6 Months', 3999, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                                </button>
+                                <button onclick="handleSubscription('6 Months', 3999, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Plan 3 -->
+                        <div class="p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500 transition duration-300">
+                            <p class="text-xl font-bold">1 Year Plan</p>
+                            <p class="text-2xl font-extrabold mt-1 text-green-400">₹7,999 <span class="text-sm font-normal text-gray-400">(₹666/mo)</span></p>
+                            <div class="mt-3 space-y-2">
+                                <button onclick="handleSubscription('1 Year', 7999, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                                </button>
+                                <button onclick="handleSubscription('1 Year', 7999, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                                    <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Dropdown -->
+             <div class="relative">
+                <button id="profile-dropdown-btn" onclick="toggleProfileDropdown(event)" class="text-gray-300 hover:text-white transition duration-200 flex items-center">
+                    <span id="profile-status">Profile</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div id="profile-dropdown-menu" class="navbar-dropdown-profile hidden p-3 bg-gray-900 rounded-xl shadow-2xl border border-gray-700 text-sm">
+                    <p id="profile-details" class="p-2 text-gray-400 border-b border-gray-700 mb-2">User Profile</p>
+                    <a href="#" class="block p-2 text-gray-300 hover:bg-gray-800 rounded-lg transition duration-200">View Profile</a>
+                    <a href="#" onclick="logout()" class="block p-2 text-red-400 hover:bg-gray-800 rounded-lg transition duration-200">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Auth Overlay (Login/Register) -->
+    <div id="auth-overlay" class="overlay fixed inset-0 flex items-center justify-center hidden">
+        <div class="bg-gray-900 p-8 rounded-xl shadow-2xl w-full max-w-sm mx-4 border border-blue-600">
+            <h2 class="text-3xl font-bold mb-4 text-blue-400 text-center" id="auth-title">Login / Register</h2>
+            <p class="text-sm text-center text-gray-400 mb-6">Secure your personal analysis data with an account.</p>
+
+            <input type="email" id="auth-email" class="w-full p-3 mb-4 rounded-lg bg-gray-800 text-white placeholder-gray-500 border border-gray-700 focus:ring-2 focus:ring-blue-500" placeholder="Email Address">
+            <input type="password" id="auth-password" class="w-full p-3 mb-4 rounded-lg bg-gray-800 text-white placeholder-gray-500 border border-gray-700 focus:ring-2 focus:ring-blue-500" placeholder="Password">
+            
+            <button onclick="handleAuthAction('login')" class="w-full p-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition duration-200 mb-3">Login</button>
+            <button onclick="handleAuthAction('register')" class="w-full p-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition duration-200 mb-4">Register</button>
+            
+            <button onclick="skipAuth()" class="w-full p-2 text-sm text-gray-400 hover:text-white transition duration-200">
+                Skip for now (Anonymously continue)
+            </button>
+        </div>
+    </div>
+    
+    <!-- Subscription Overlay -->
+    <div id="subscription-overlay" class="overlay fixed inset-0 flex items-center justify-center hidden">
+        <div class="bg-gray-900 p-10 rounded-xl shadow-2xl w-full max-w-4xl mx-4 border border-green-600 text-center">
+            <h2 class="text-4xl font-bold mb-4 text-green-400">Unlock Full Analysis</h2>
+            <p class="text-lg text-gray-300 mb-8">Choose a plan to view your personalized health advisory based on all 3 steps.</p>
+            
+            <div class="grid md:grid-cols-3 gap-6">
+                <!-- Plan 1 -->
+                <div class="p-6 bg-gray-800 rounded-xl border border-gray-700 hover:border-blue-500 transition duration-300">
+                    <p class="text-2xl font-bold">1 Month</p>
+                    <p class="text-4xl font-extrabold my-2 text-blue-400">₹799</p>
+                    <p class="text-sm text-gray-400">Billed Monthly</p>
+                    <hr class="my-4 border-gray-700">
+                    <p class="text-left text-sm text-gray-300 mb-4">Full access for 30 days.</p>
+                    <div class="space-y-2">
+                        <button onclick="handleSubscription('1 Month', 799, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                        </button>
+                        <button onclick="handleSubscription('1 Month', 799, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Plan 2 -->
+                <div class="p-6 bg-gray-800 rounded-xl border-2 border-yellow-500 shadow-xl transition duration-300 transform scale-105">
+                    <p class="text-2xl font-bold">6 Months</p>
+                    <p class="text-4xl font-extrabold my-2 text-yellow-400">₹3,999</p>
+                    <p class="text-sm text-gray-400">(Saves ₹795)</p>
+                    <hr class="my-4 border-gray-700">
+                    <p class="text-left text-sm text-gray-300 mb-4">Best value for long-term commitment.</p>
+                     <div class="space-y-2">
+                        <button onclick="handleSubscription('6 Months', 3999, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                        </button>
+                        <button onclick="handleSubscription('6 Months', 3999, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Plan 3 -->
+                <div class="p-6 bg-gray-800 rounded-xl border border-gray-700 hover:border-blue-500 transition duration-300">
+                    <p class="text-2xl font-bold">1 Year</p>
+                    <p class="text-4xl font-extrabold my-2 text-blue-400">₹7,999</p>
+                    <p class="text-sm text-gray-400">(Saves ₹1,589)</p>
+                    <hr class="my-4 border-gray-700">
+                    <p class="text-left text-sm text-gray-300 mb-4">Continuous personalized care for 365 days.</p>
+                     <div class="space-y-2">
+                        <button onclick="handleSubscription('1 Year', 7999, 'gpay', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-blue-600 hover:bg-blue-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> GPay
+                        </button>
+                        <button onclick="handleSubscription('1 Year', 7999, 'paytm', event)" class="w-full flex items-center justify-center p-2 rounded-lg font-semibold transition duration-200 bg-orange-600 hover:bg-orange-700 text-white">
+                            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-6h-2v6zm0-8h2V7h-2v2z"/></svg> Paytm
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="skipSubscription()" class="mt-8 p-3 text-lg text-gray-400 hover:text-white transition duration-200">
+                Skip for now (View result once)
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal for Portals -->
+    <div id="modal" class="modal fixed inset-0 flex items-center justify-center hidden">
+        <div id="modal-content" class="bg-gray-900 p-8 rounded-xl shadow-2xl w-full max-w-lg mx-4 border border-blue-600 transition-all duration-500">
+            <h2 id="modal-title" class="text-3xl font-bold mb-4 text-blue-400">Conversation Portal</h2>
+            <div id="chat-window" class="h-80 overflow-y-auto p-4 bg-gray-800 rounded-lg mb-4 flex flex-col space-y-3">
+                <!-- Chat messages will be appended here -->
+            </div>
+            <div id="input-area" class="flex">
+                <input type="text" id="chat-input" class="flex-grow p-3 rounded-l-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500" placeholder="Enter your response...">
+                <button onclick="sendMessage()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-r-lg font-semibold transition duration-200">Send</button>
+            </div>
+            <p id="timer" class="text-center text-sm mt-3 text-gray-400"></p>
+            <div id="camera-simulation" class="hidden flex flex-col items-center justify-center h-80">
+                 <div class="relative w-full h-full bg-black border-4 border-dashed border-red-500 rounded-lg overflow-hidden">
+                    <p class="text-center text-red-500 mt-4 text-lg">Camera access required...</p>
+                    <div id="scanner-line" class="absolute top-0 left-0 w-full h-1 bg-green-400 shadow-lg shadow-green-500 animate-pulse"></div>
+                    <p class="text-center text-gray-500 mt-20 text-sm">Simulating scanning...</p>
+                 </div>
+                 <p class="text-sm text-yellow-400 mt-4">Actual camera access is restricted here. This is a simulation.</p>
+            </div>
+            
+            <!-- Cancel Button -->
+            <button onclick="cancelProcess()" id="cancel-btn" class="mt-4 w-full px-6 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition duration-200">
+                Cancel Process
+            </button>
+        </div>
+    </div>
+    
+    <!-- Global Message Box -->
+    <div id="message-box" class="message-box hidden"></div>
+
+    <!-- Main Content Wrapper -->
+    <div id="content-wrapper">
+
+        <!-- Hero Section -->
+        <section class="min-h-screen flex flex-col items-center justify-center pt-24 pb-16 bg-transparent relative overflow-hidden">
+            <!-- Background video (fills the section, sits above the global page-bg and behind the section content) -->
+            <video autoplay muted loop playsinline preload="auto" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="z-index:0;">
+                <source src="bg2.mp4" type="video/mp4" onerror="this.onerror=null;this.src='https://assets.mixkit.co/videos/preview/mixkit-artificial-intelligence-interface-31122-large.mp4'">
+                Your browser does not support the video tag.
+            </video>
+
+            <!-- Subtle gradient overlay to improve text contrast -->
+            <div class="absolute inset-0 pointer-events-none" style="z-index:1; background: linear-gradient(180deg, rgba(6,8,17,0.55) 0%, rgba(6,8,17,0.35) 50%, rgba(6,8,17,0.6) 100%);"></div>
+
+            <!-- Content (kept above the video) -->
+            <div class="relative z-10 text-center px-6">
+                <h1 class="text-7xl md:text-9xl font-extrabold tracking-tight" style="color: var(--ice-color);">
+                    SNOW
+                </h1>
+                <p class="text-xl md:text-3xl mt-2 text-white/80 font-medium">The Intelligence from MIND MELT AI</p>
+                <p class="text-lg mt-8 text-gray-400 max-w-3xl mx-auto">
+                    Discover your mental well-being through deep analysis. Complete these 3 portals for comprehensive advice.
+                </p>
+                <a href="#portal-1" class="mt-16 px-8 py-3 bg-white text-black rounded-full font-bold shadow-lg hover:shadow-xl transition duration-300 transform hover:scale-105 inline-block">
+                    Start melting
+                </a>
+                <p class="text-sm text-gray-500 mt-4">Dive into a world of unthawed insight.</p>
+            </div>
+        </section>
+
+        <!-- Portal 1: Journaling -->
+        <div id="portal-1" class="portal-card bg-gray-800 text-white p-12 lg:p-24 flex items-center justify-center mx-auto rounded-3xl mb-10 shadow-2xl snap-target relative overflow-hidden" onclick="openPortal(1)">
+            <!-- Clipped background video INSIDE the portal (fills the card, clipped by overflow-hidden & rounded corners) -->
+            <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none" style="z-index:0;">
+                <video autoplay muted loop playsinline class="w-full h-full object-cover" style="transform: translateZ(0); opacity:0.95;">
+                    <source src="snow1.mp4" type="video/mp4" onerror="this.onerror=null;this.src='https://assets.mixkit.co/videos/preview/mixkit-artificial-intelligence-interface-31122-large.mp4'">
+                    Your browser does not support the video tag.
+                </video>
+                <!-- subtle overlay to improve text contrast -->
+                <div class="absolute inset-0" style="background: linear-gradient(180deg, rgba(6,8,17,0.55) 0%, rgba(6,8,17,0.45) 50%, rgba(6,8,17,0.6) 100%);"></div>
+            </div>
+
+            <div class="text-center relative z-10">
+                <span class="text-6xl font-extrabold text-blue-400">01</span>
+                <h2 class="text-5xl font-bold mt-4 mb-2">Journaling Portal</h2>
+                <p id="status-1" class="text-xl text-gray-400 transition-all duration-500">Status: Pending (Click to Start)</p>
+                <p class="mt-4 max-w-2xl mx-auto text-gray-300">
+                    Log your state of mind through a casual conversation. This 2-minute dialogue aids in deep analysis.
+                </p>
+            </div>
+        </div>
+
+        <!-- Portal 2: Enquiry Q&A -->
+        <div id="portal-2" class="portal-card bg-gray-800 text-white p-12 lg:p-24 flex items-center justify-center mx-auto rounded-3xl mb-10 shadow-2xl snap-target relative overflow-hidden" onclick="openPortal(2)">
+            <!-- Clipped background video INSIDE the portal (fills the card, clipped by overflow-hidden & rounded corners) -->
+            <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none" style="z-index:0;">
+            <video autoplay muted loop playsinline class="w-full h-full object-cover" style="transform: translateZ(0); opacity:0.95;">
+                <source src="snow2.mp4" type="video/mp4" onerror="this.onerror=null;this.src='https://assets.mixkit.co/videos/preview/mixkit-artificial-intelligence-interface-31122-large.mp4'">
+                Your browser does not support the video tag.
+            </video>
+            <!-- subtle overlay to improve text contrast -->
+            <div class="absolute inset-0" style="background: linear-gradient(180deg, rgba(6,8,17,0.55) 0%, rgba(6,8,17,0.45) 50%, rgba(6,8,17,0.6) 100%);"></div>
+            </div>
+
+            <div class="text-center relative z-10">
+            <span class="text-6xl font-extrabold text-blue-400">02</span>
+            <h2 class="text-5xl font-bold mt-4 mb-2">Enquiry Portal</h2>
+            <p id="status-2" class="text-xl text-gray-400 transition-all duration-500">Status: Pending</p>
+            <p class="mt-4 max-w-2xl mx-auto text-gray-300">
+                10 to 20 questions will be asked based on the first conversation. This stage analyzes your responses.
+            </p>
+            </div>
+        </div>
+
+        <!-- Portal 3: Face Scanning -->
+        <div id="portal-3" class="portal-card bg-gray-800 text-white p-12 lg:p-24 flex items-center justify-center mx-auto rounded-3xl mb-10 shadow-2xl snap-target relative overflow-hidden" onclick="openPortal(3)">
+            <!-- Background video INSIDE the portal (fills the card, clipped by overflow-hidden) -->
+            <video autoplay muted loop playsinline class="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" style="z-index:0; transform: translateZ(0);">
+                <source src="snow3.mp4" type="video/mp4" onerror="this.onerror=null;this.src='https://assets.mixkit.co/videos/preview/mixkit-artificial-intelligence-interface-31122-large.mp4'">
+                Your browser does not support the video tag.
+            </video>
+
+            <!-- Subtle gradient overlay to improve text contrast -->
+            <div class="absolute inset-0 pointer-events-none" style="z-index:1; background: linear-gradient(180deg, rgba(6,8,17,0.6) 0%, rgba(6,8,17,0.25) 50%, rgba(6,8,17,0.6) 100%);"></div>
+
+            <div class="text-center relative z-10">
+                <span class="text-6xl font-extrabold text-blue-400">03</span>
+                <h2 class="text-5xl font-bold mt-4 mb-2">Face Scanning Portal</h2>
+                <p id="status-3" class="text-xl text-gray-400 transition-all duration-500">Status: Pending</p>
+                <p class="mt-4 max-w-2xl mx-auto text-gray-300">
+                    Camera access is required to analyze your facial expressions and physical signs.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Final Analysis Report / Receipt -->
+        <section id="output-section" class="min-h-screen flex flex-col items-center justify-center pt-32 pb-20 bg-transparent">
+            <div class="max-w-4xl w-full p-10 bg-gray-900 border-t-8 border-green-500 rounded-3xl shadow-2xl font-mono">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-green-400">SNOW AI</h2>
+                    <p class="text-lg text-gray-300 mt-1">Formal Analysis Report</p>
+                    <p class="text-xs text-gray-500 mt-3">SNOW AI Version: 1.0.25 | Date: 2025-10-25 | User ID: <span id="report-user-id">Anonymous-User-ID</span></p>
+                </div>
+
+                <hr class="my-6 border-gray-700">
+
+                <h3 class="text-xl font-semibold text-white mb-4">I. Data Collection Summary</h3>
+                <div class="space-y-4 text-sm">
+                    <div class="flex justify-between p-3 bg-gray-800 rounded-lg">
+                        <span class="font-semibold text-blue-300">01. Journaling Portal (Conversation)</span>
+                        <span id="result-1" class="text-gray-300">Mood: Early-stage mental strain detected.</span>
+                    </div>
+                    <div class="flex justify-between p-3 bg-gray-800 rounded-lg">
+                        <span class="font-semibold text-blue-300">02. Enquiry Portal (Q&A)</span>
+                        <span id="result-2" class="text-gray-300">Symptoms: Insomnia and social withdrawal confirmed.</span>
+                    </div>
+                    <div class="flex justify-between p-3 bg-gray-800 rounded-lg">
+                        <span class="font-semibold text-blue-300">03. Face Scanning Portal</span>
+                        <span id="result-3" class="text-gray-300">Physical Signs: Facial tension and reduced eye contact observed.</span>
+                    </div>
+                </div>
+
+                <hr class="my-6 border-gray-700">
+
+                <h3 class="text-xl font-semibold text-white mb-4">II. Final Conclusion</h3>
+
+                <div class="text-center p-6 bg-blue-900/30 rounded-xl border border-blue-600">
+                    <p class="text-sm font-extrabold text-white mb-2">SNOW AI COMPREHENSIVE DIAGNOSIS</p>
+                    <h4 class="text-4xl font-extrabold text-red-400 mb-4">Mild Anxiety State</h4>
+                    <p class="text-base text-white/90 leading-relaxed">
+                        Recommendation: It is advised to practice 'Mindfulness' for 15 minutes every evening and to include magnesium-rich foods in your diet. Speaking with your mental health professional or counselor is the next best step.
+                    </p>
+                </div>
+                
+                 <hr class="my-6 border-gray-700">
+                 
+                 <div class="text-center text-xs text-gray-600">
+                    <p>This report is for informational purposes only and does not substitute professional medical advice.</p>
+                 </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        // =========================================================
+        // Global State & Firebase Initialization (Simulated)
+        // =========================================================
+        
+        let db = window.db;
+        let auth = window.auth;
+        let appId = window.appId;
+        
+        let isAuthenticated = false; // Tracks if the user has completed login/register/skip
+        let userId = 'Anonymous'; // Default until authenticated
+        
+        const portalState = {
+            1: 'pending',
+            2: 'pending',
+            3: 'pending',
+        };
+
+        let currentPortal = 0;
+        let chatStep = 0; 
+        let chatTimerInterval;
+
+        // UI Elements
+        const body = document.body;
+        const modal = document.getElementById('modal');
+        const authOverlay = document.getElementById('auth-overlay');
+        const subscriptionOverlay = document.getElementById('subscription-overlay');
+        const chatWindow = document.getElementById('chat-window');
+        const chatInput = document.getElementById('chat-input');
+        const inputArea = document.getElementById('input-area');
+        const timerDisplay = document.getElementById('timer');
+        const scannerDiv = document.getElementById('camera-simulation');
+        const messageBox = document.getElementById('message-box');
+        const outputSection = document.getElementById('output-section');
+        const aiVideo = document.querySelector('#ai-animation-bg video'); 
+
+        // =========================================================
+        // UI & Scroll Events (Parallax & Snapping)
+        // =========================================================
+
+        // Parallax Effect
+        window.addEventListener('scroll', () => {
+            const scrollY = window.scrollY;
+            
+            // 1. Parallax Movement (Background moves slower than foreground)
+            // Adjust translateY of the video
+            aiVideo.style.transform = `translate(-50%, calc(-50% + ${scrollY * 0.3}px))`; 
+            
+            // 2. Adjust video filter/opacity based on scroll for dynamic effect
+            const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+            const scrollProgress = scrollY / maxScroll; // 0 to 1
+            const blurAmount = 2 + (scrollProgress * 4); 
+            const grayscaleAmount = 50 + (scrollProgress * 50); 
+            aiVideo.style.filter = `blur(${blurAmount}px) grayscale(${grayscaleAmount}%)`;
+
+            // Close any open dropdowns when scrolling starts
+            document.getElementById('plans-dropdown-menu').classList.add('hidden');
+            document.getElementById('profile-dropdown-menu').classList.add('hidden');
+            
+            // Portal Visibility/Overlap Logic
+            document.querySelectorAll('.portal-card').forEach(portal => {
+                const rect = portal.getBoundingClientRect();
+                
+                // Show the portal when its top is above 90% of the viewport (more aggressive trigger)
+                // This ensures it appears well before the current one fully leaves.
+                if (rect.top < window.innerHeight * 0.9 && rect.bottom > window.innerHeight * 0.1) {
+                    portal.classList.add('visible');
+                } else {
+                    portal.classList.remove('visible');
+                }
+            });
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (event) => {
+             const plansMenu = document.getElementById('plans-dropdown-menu');
+             const profileMenu = document.getElementById('profile-dropdown-menu');
+             
+             // Check if click is outside the buttons and menus
+             if (!document.getElementById('plans-dropdown-btn').contains(event.target) && !plansMenu.contains(event.target)) {
+                 plansMenu.classList.add('hidden');
+             }
+             if (!document.getElementById('profile-dropdown-btn').contains(event.target) && !profileMenu.contains(event.target)) {
+                 profileMenu.classList.add('hidden');
+             }
+        });
+
+        // =========================================================
+        // Navbar Dropdown Functions
+        // =========================================================
+
+        function togglePlansDropdown(event) {
+            event.stopPropagation();
+            document.getElementById('plans-dropdown-menu').classList.toggle('hidden');
+            // Ensure other dropdown is closed
+            document.getElementById('profile-dropdown-menu').classList.add('hidden');
+        }
+
+        function toggleProfileDropdown(event) {
+            event.stopPropagation();
+            document.getElementById('profile-dropdown-menu').classList.toggle('hidden');
+            // Ensure other dropdown is closed
+            document.getElementById('plans-dropdown-menu').classList.add('hidden');
+        }
+
+        function updateProfileUI(status, id) {
+             const profileStatus = document.getElementById('profile-status');
+             const profileDetails = document.getElementById('profile-details');
+             
+             if (status === 'authenticated') {
+                 profileStatus.textContent = 'User (Logged In)';
+                 profileDetails.textContent = `User ID: ${id.substring(0, 8)}...`;
+             } else if (status === 'skipped') {
+                 profileStatus.textContent = 'Anonymous';
+                 profileDetails.textContent = `User ID: ${id.substring(0, 8)}...`;
+             } else {
+                 profileStatus.textContent = 'Profile';
+                 profileDetails.textContent = 'Please Login or Register';
+             }
+        }
+        
+        function logout() {
+            // Simulate logout
+            isAuthenticated = false;
+            userId = 'Anonymous';
+            updateProfileUI('pending', userId);
+            showMessage("Logged out successfully. Data is now anonymous.");
+            document.getElementById('profile-dropdown-menu').classList.add('hidden');
+        }
+
+        // =========================================================
+        // General Functions
+        // =========================================================
+
+        function showMessage(text) {
+            messageBox.textContent = text;
+            messageBox.classList.remove('hidden');
+            messageBox.classList.add('show');
+            setTimeout(() => {
+                messageBox.classList.remove('show');
+                setTimeout(() => messageBox.classList.add('hidden'), 500);
+            }, 3000);
+        }
+
+        function updatePortalUI(id, status) {
+            const portal = document.getElementById(`portal-${id}`);
+            const statusText = document.getElementById(`status-${id}`);
+            portalState[id] = status;
+
+            if (status === 'inProgress') {
+                portal.classList.remove('completed');
+                statusText.textContent = `Status: In Progress...`;
+                portal.classList.add('border-blue-500');
+            } else if (status === 'completed') {
+                portal.classList.add('completed');
+                statusText.textContent = `Status: Successfully Completed!`;
+                portal.classList.remove('border-blue-500');
+                portal.onclick = null; // Prevent reopening completed portal
+                
+                // After Portal 3 completion, show subscription overlay
+                if (id === 3) {
+                    setTimeout(() => {
+                        subscriptionOverlay.classList.remove('hidden');
+                        document.body.style.overflow = 'hidden'; // Lock scroll
+                    }, 1000);
+                } else {
+                    // Guide to scroll to the next portal
+                    const nextId = id + 1;
+                    const nextPortal = document.getElementById(`portal-${nextId}`);
+                    if (nextPortal) {
+                        nextPortal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        showMessage(`Step ${id} finished. Scroll to start the next portal.`);
+                    }
+                }
+            } else { // pending
+                portal.classList.remove('completed');
+                statusText.textContent = `Status: Pending (Click to Start)`;
+                portal.onclick = () => openPortal(id);
+            }
+        }
+
+        function openPortal(id) {
+            if (portalState[id] === 'completed') {
+                showMessage(`Step ${id} already completed.`);
+                return;
+            }
+            if (currentPortal !== 0) {
+                 showMessage(`Please complete Step ${currentPortal} first.`);
+                 return;
+            }
+            if (id > 1 && portalState[id - 1] !== 'completed') {
+                 showMessage(`Please complete Step ${id-1} first.`);
+                 return;
+            }
+            // Check if user has authenticated/skipped, required for Portal 2 and 3
+            if (id > 1 && !isAuthenticated) {
+                 showMessage("Please Login or Register (or Skip) through the overlay before proceeding to the next steps.");
+                 authOverlay.classList.remove('hidden');
+                 return;
+            }
+
+            currentPortal = id;
+            updatePortalUI(id, 'inProgress');
+            modal.classList.remove('hidden');
+            chatWindow.innerHTML = '';
+            
+            if (id === 1) {
+                document.getElementById('modal-title').textContent = "Step 1: Journaling Conversation";
+                inputArea.classList.remove('hidden');
+                scannerDiv.classList.add('hidden');
+                startChat1();
+            } else if (id === 2) {
+                document.getElementById('modal-title').textContent = "Step 2: Enquiry Q&A";
+                inputArea.classList.remove('hidden');
+                scannerDiv.classList.add('hidden');
+                chatStep = 0;
+                startChat2();
+            } else if (id === 3) {
+                document.getElementById('modal-title').textContent = "Step 3: Face Scanning";
+                inputArea.classList.add('hidden');
+                scannerDiv.classList.remove('hidden');
+                timerDisplay.textContent = 'Attempting camera access...';
+                startCameraScan();
+            }
+        }
+
+        function closePortal() {
+            modal.classList.add('hidden');
+            clearInterval(chatTimerInterval);
+            currentPortal = 0;
+            timerDisplay.textContent = ''; 
+            // Reset scanner animation if it was running
+            const scannerLine = document.getElementById('scanner-line');
+            if (scannerLine) scannerLine.style.animation = 'none';
+        }
+        
+        function cancelProcess() {
+            if (currentPortal === 0) return;
+
+            const cancelledId = currentPortal;
+
+            closePortal(); 
+            updatePortalUI(cancelledId, 'pending');
+            
+            showMessage(`Process cancelled for Step ${cancelledId}. Status reverted to Pending.`);
+        }
+        
+        // Close modal if clicking outside
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                cancelProcess(); 
+            }
+        });
+
+
+        // =========================================================
+        // Auth/Registration Functions
+        // =========================================================
+
+        async function handleAuthAction(action) {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            
+            if (!email || !password) {
+                showMessage("Please enter both email and password.");
+                return;
+            }
+            
+            // SIMULATION: Replace with actual Firebase calls in a real app
+            try {
+                if (window.auth) {
+                    if (action === 'register') {
+                        await window.createUserWithEmailAndPassword(window.auth, email, password);
+                        showMessage("Registration successful! You are now logged in.");
+                    } else { // login
+                        await window.signInWithEmailAndPassword(window.auth, email, password);
+                        showMessage("Login successful!");
+                    }
+                    userId = window.auth.currentUser.uid;
+                    isAuthenticated = true;
+                    authOverlay.classList.add('hidden');
+                    document.body.style.overflow = ''; // Allow scroll
+                    updateProfileUI('authenticated', userId);
+                } else {
+                    // Fallback for simulation environment
+                    console.warn("Firebase Auth not fully initialized. Simulating success.");
+                    userId = 'SimUser-' + Math.random().toString(36).substring(2, 10);
+                    isAuthenticated = true;
+                    authOverlay.classList.add('hidden');
+                    document.body.style.overflow = '';
+                    updateProfileUI('authenticated', userId);
+                    showMessage(`Login/Registration simulated successfully for ${email}.`);
+                }
+            } catch (error) {
+                 // Simulate error handling
+                 const errorMessage = error.message || "An error occurred during authentication.";
+                 showMessage(`Auth Failed: ${errorMessage}`);
+                 console.error("Auth Error:", error);
+            }
+        }
+
+        function skipAuth() {
+            userId = 'Anon-' + Math.random().toString(36).substring(2, 10);
+            isAuthenticated = true;
+            authOverlay.classList.add('hidden');
+            document.body.style.overflow = '';
+            updateProfileUI('skipped', userId);
+            showMessage("Continuing anonymously. Your data will be stored locally.");
+        }
+
+        // =========================================================
+        // Subscription Functions
+        // =========================================================
+
+        function handleSubscription(plan, price, method, event) {
+            event.stopPropagation();
+            
+            // 1. UPI Deep Link Construction (Simulated)
+            let paymentUrl;
+            if (method === 'gpay') {
+                // Placeholder VPA (Virtual Payment Address)
+                paymentUrl = `upi://pay?pa=simulate@upi&pn=SNOWAI&am=${price}&cu=INR&tid=${Date.now()}&tr=SNOW${plan.replace(/\s/g, "")}`;
+            } else if (method === 'paytm') {
+                 // Placeholder VPA for Paytm
+                paymentUrl = `upi://pay?pa=paytm@upi&pn=SNOWAI&am=${price}&cu=INR&tid=${Date.now()}&tr=SNOW${plan.replace(/\s/g, "")}`;
+            }
+
+            if (paymentUrl) {
+                 // 2. Attempt to open payment app (simulated)
+                 window.open(paymentUrl, '_blank');
+                 showMessage(`Attempting to open ${method} for ₹${price} (${plan}). Please check the new window.`);
+                 
+                 // 3. Simulate payment success after a short delay
+                 setTimeout(() => {
+                     subscriptionOverlay.classList.add('hidden');
+                     document.body.style.overflow = '';
+                     outputSection.style.opacity = '1';
+                     outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                     showMessage("Payment simulated successfully! Viewing final analysis.");
+                 }, 3000); 
+            } else {
+                showMessage("Payment method not supported in this prototype.");
+            }
+
+        }
+
+        function skipSubscription() {
+            subscriptionOverlay.classList.add('hidden');
+            document.body.style.overflow = '';
+            outputSection.style.opacity = '1';
+            outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showMessage("Skipped subscription. Viewing one-time analysis.");
+        }
+
+        // =========================================================
+        // Portal 1 (Chatbot) Functions
+        // =========================================================
+
+        function startChat1() {
+            let timeLeft = 120; // 2 minutes
+            addMessage('AI', 'Hello! Welcome to SNOW AI. To deeply understand your mind, please talk about how you feel today, like a journaling session.');
+            
+            chatTimerInterval = setInterval(() => {
+                timeLeft--;
+                const minutes = Math.floor(timeLeft / 60);
+                const seconds = timeLeft % 60;
+                timerDisplay.textContent = `Time Remaining: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+                if (timeLeft <= 0) {
+                    clearInterval(chatTimerInterval);
+                    addMessage('AI', 'Time\'s up. This 2-minute dialogue has been recorded for analysis. Thank you.');
+                    setTimeout(() => {
+                        closePortal();
+                        updatePortalUI(1, 'completed');
+                    }, 1500);
+                }
+            }, 1000);
+        }
+        
+        // =========================================================
+        // Portal 2 (Q&A) Functions
+        // =========================================================
+
+        const questions = [
+            "What were your sleeping patterns like in the past week?",
+            "Tell me about an activity that brings you great joy.",
+            "Do you easily get anxious, or worried?",
+            "Do you feel like your social interactions have decreased?",
+            "Is your energy level generally low?",
+            "Are there any changes in your eating habits?",
+            "Do you exercise regularly?",
+            "Do you trust anyone to talk about your mind?",
+            "What is one thing in your life you are most grateful for?",
+            "What is one factor that causes you stress?"
+        ];
+
+        function startChat2() {
+            timerDisplay.textContent = `Question 1 / ${questions.length} - Please answer briefly.`;
+            addMessage('AI', questions[chatStep]);
+        }
+
+        function sendMessage() {
+            const text = chatInput.value.trim();
+            if (!text) {
+                showMessage("Please type a response.");
+                return;
+            }
+
+            addMessage('User', text);
+            chatInput.value = '';
+            
+            if (currentPortal === 1) {
+                simulateAIResponse(1, `Your response is being analyzed by the AI...`);
+            } else if (currentPortal === 2) {
+                chatStep++;
+                if (chatStep < questions.length) {
+                    simulateAIResponse(2, `Your answer was recorded. Next question: ${questions[chatStep]}`);
+                    timerDisplay.textContent = `Question ${chatStep + 1} / ${questions.length} - Please answer briefly.`;
+                } else {
+                    simulateAIResponse(2, 'Thank you for answering all the questions. Analysis complete.');
+                    setTimeout(() => {
+                        closePortal();
+                        updatePortalUI(2, 'completed');
+                    }, 1500);
+                }
+            }
+        }
+        
+        function simulateAIResponse(portalId, responseText) {
+            setTimeout(() => {
+                 if (portalId === currentPortal) { 
+                    addMessage('AI', responseText);
+                 }
+            }, 1000 + Math.random() * 1000); 
+        }
+        
+        function addMessage(sender, text) {
+            const msgDiv = document.createElement('div');
+            const isAI = sender === 'AI';
+            
+            msgDiv.className = `flex ${isAI ? 'justify-start' : 'justify-end'}`;
+            msgDiv.innerHTML = `
+                <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-xl text-white ${isAI ? 'bg-blue-600 rounded-tl-none' : 'bg-gray-600 rounded-br-none'} shadow-md">
+                    ${text}
+                </div>
+            `;
+            chatWindow.appendChild(msgDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+
+        // =========================================================
+        // Portal 3 (Scanning) Functions
+        // =========================================================
+
+        function startCameraScan() {
+             timerDisplay.textContent = 'Simulating camera access...';
+             showMessage("Camera access required. Note the allowance (Simulation).");
+             
+             const scannerLine = document.getElementById('scanner-line');
+             scannerLine.style.animation = 'none'; 
+             scannerLine.offsetHeight; 
+             scannerLine.style.animation = 'scan 3s ease-in-out forwards';
+             
+             // Scanning completion after 3 seconds
+             setTimeout(() => {
+                timerDisplay.textContent = 'Scanning analysis complete.';
+                showMessage("Facial expression analysis completed. Thank you.");
+                
+                setTimeout(() => {
+                    closePortal();
+                    updatePortalUI(3, 'completed');
+                }, 1500);
+             }, 3000); // 3 second scan simulation
+        }
+
+
+        // =========================================================
+        // Initial setup on Load
+        // =========================================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updatePortalUI(1, 'pending');
+            updatePortalUI(2, 'pending');
+            updatePortalUI(3, 'pending');
+            
+            // 1. Initial Prompt
+            showMessage("Welcome to SNOW AI. Scroll to begin.");
+            
+            // 2. Auths Overlay after 30 seconds
+            setTimeout(() => {
+                if (!isAuthenticated) { 
+                    authOverlay.classList.remove('hidden');
+                    document.body.style.overflow = 'hidden'; // Lock scroll
+                    showMessage("Please Login or Register to secure your data.");
+                }
+            }, 30000); // 30 seconds
+            
+            // 3. Initial Profile UI
+            updateProfileUI('pending', userId);
+        });
+
+    </script>
+</body>
+</html>
